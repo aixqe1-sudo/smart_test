@@ -1,0 +1,52 @@
+name: Smart Test Selection Lab
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  impact-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout complete history for diff
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install local project
+        run: python -m pip install -e '.[dev]'
+      - name: Determine comparison base
+        id: base
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "base=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            echo "base=$BEFORE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=HEAD" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Select tests with conservative safety mode
+        run: python -m tools.selector --base '${{ steps.base.outputs.base }}' --mode safe
+      - name: Run impacted tests (or complete suite when uncertain)
+        run: python -m tools.run_selected
+      - name: Weekly/full audit on manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        run: python -m pytest -q
+      - name: Upload selection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-selection-evidence
+          path: reports/selection.json
+          if-no-files-found: ignore
