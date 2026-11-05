@@ -8,7 +8,7 @@ Good question. But here's the less comfortable one: **how do you know which test
 
 I built a small Git-aware test selector to find out. It reads changed Python files, builds a dependency graph from imports, and picks only the related tests. There are two modes: an optimistic one and a conservative one. I added a bug on purpose and measured whether each mode could catch it.
 
-This article includes the complete project, a GitHub Actions workflow, and an exercise you can reproduce in a few commands.
+The complete source is now public on GitHub: **[aixqe1-sudo/smart_test](https://github.com/aixqe1-sudo/smart_test)**. It contains the checkout example, selector, tests, a GitHub Actions workflow, and everything required to reproduce the experiment.
 
 ## The application
 
@@ -38,12 +38,19 @@ This runtime dependency doesn't look like an ordinary import edge in our AST gra
 
 ## Run it yourself
 
-Create a virtual environment, install `pytest`, and run the baseline:
+Clone the real repository and set up a Python 3.10+ environment:
 
 ```bash
+git clone https://github.com/aixqe1-sudo/smart_test.git
+cd smart_test
+python -m venv .venv
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
 python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
+
+The baseline test suite should pass before the experiment. You can inspect the repository's [README](https://github.com/aixqe1-sudo/smart_test/blob/main/README.md) for the full setup instructions.
 
 Then run our isolated experiment:
 
@@ -53,9 +60,9 @@ python -m tools.demo
 
 The script copies the project into a temporary directory and injects the defective statement `return True` into the risk rule. You don't need to edit files or reset your repo afterward.
 
-Here's what to look for:
+I ran the deterministic experiment locally before publishing the project. These are the outcomes observed; you can reproduce them rather than taking my word for it:
 
-| Execution | Expected observation |
+| Execution | Observed locally |
 |---|---|
 | Full suite before injection | Green |
 | `fast` selection after injection | Green, but misses the checkout failure |
@@ -63,6 +70,8 @@ Here's what to look for:
 | Independently run full suite | Red; proves the missed defect |
 
 The `fast` outcome is not success. It's a **dangerous green**. We reduced test execution, but lost the evidence we needed to catch the change.
+
+The generated evidence lives at `reports/demo-results.json` (a local, Git-ignored file). The repository does **not** contain a pre-generated report; running the demo creates it on your machine.
 
 ## Why the safeguard matters
 
@@ -74,12 +83,26 @@ For production, I'd add three more gates: runtime execution traces to improve th
 
 ## Where is the AI?
 
-The repo includes an optional local Ollama advisor. Run `python -m tools.selector --changed shop/risk.py --mode fast --ai` after installing Ollama and setting `OLLAMA_MODEL`. The model proposes additional impacted tests based on changed source code and the available test filenames. It can only **add** tests to the deterministic baseline. We still audit what it chooses. AI is an experimental extension, not a prerequisite for the core lab.
+The repo includes an optional local Ollama advisor. After installing [Ollama](https://ollama.com/) and pulling a compatible model, set `OLLAMA_MODEL` and run `python -m tools.selector --changed shop/risk.py --mode fast --ai`. The model proposes additional impacted tests based on changed source code and the available test filenames. It can only **add** tests to the deterministic baseline. We still audit what it chooses. AI is an experimental extension, not a prerequisite for the core lab. **I have not verified this optional AI path against a running Ollama instance.**
 
 That distinction matters. Smarter test selection is not the same thing as fewer tests.
 
+## The GitHub project and CI
+
+**Repository:** https://github.com/aixqe1-sudo/smart_test
+
+**Source and tests:** [`shop/`](https://github.com/aixqe1-sudo/smart_test/tree/main/shop), [`tests/`](https://github.com/aixqe1-sudo/smart_test/tree/main/tests)
+
+**Selector:** [`tools/selector.py`](https://github.com/aixqe1-sudo/smart_test/blob/main/tools/selector.py)
+
+**Reproducible experiment:** [`tools/demo.py`](https://github.com/aixqe1-sudo/smart_test/blob/main/tools/demo.py)
+
+**CI workflow:** [`.github/workflows/impact-tests.yml`](https://github.com/aixqe1-sudo/smart_test/blob/main/.github/workflows/impact-tests.yml)
+
+The GitHub repository is public and its 21 source files have been confirmed on `main`. The workflow is included, but **I have not verified a successful GitHub Actions execution**. Do not confuse a committed pipeline file with a passing pipeline.
+
 ## Your turn
 
-Download the full repository linked with this edition, run `python -m tools.demo`, and try improving the selector. Can you catch the hidden risk-rule defect *without* running every test? Share your selection ratio and missed-defect count. A green build is only convincing if we can explain what it actually validated.
+Clone [the project on GitHub](https://github.com/aixqe1-sudo/smart_test), run `python -m tools.demo`, and try improving the selector. Can you catch the hidden risk-rule defect *without* running every test? Share your selection ratio and missed-defect count. A green build is only convincing if we can explain what it actually validated.
 
 **What I'd like to know:** Would you let an AI system decide which tests to skip in your production release pipeline? Under what evidence and safety constraints?
